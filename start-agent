@@ -1,0 +1,46 @@
+#!/usr/bin/env node
+
+// This is a dummy implementation, replace with yours
+
+import net from 'node:net';
+import fs from 'node:fs';
+
+const SOCKET_PATH = process.env.SOCKET_PATH || '/tmp/agent.sock';
+
+try { fs.unlinkSync(SOCKET_PATH); } catch (_) {}
+
+const server = net.createServer((conn) => {
+  let buf = '';
+  conn.on('data', (chunk) => {
+    buf += chunk.toString('utf8');
+    let idx;
+    while ((idx = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      let reply;
+      try {
+        const msg = JSON.parse(line);
+        const q = typeof msg.query === 'string' ? msg.query : '';
+        reply = q ? `echo: ${q}` : 'echo: (empty query)';
+      } catch (e) {
+        reply = `error: invalid JSON (${e.message})`;
+      }
+      conn.write(JSON.stringify({ reply }) + '\n');
+    }
+  });
+  conn.on('error', () => {});
+});
+
+function shutdown() {
+  server.close(() => {
+    try { fs.unlinkSync(SOCKET_PATH); } catch (_) {}
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+server.listen(SOCKET_PATH, () => {
+  try { fs.chmodSync(SOCKET_PATH, 0o666); } catch (_) {}
+  process.stdout.write(JSON.stringify({ type: 'agent.listening', socket: SOCKET_PATH }) + '\n');
+});
